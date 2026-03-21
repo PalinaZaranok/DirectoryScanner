@@ -45,14 +45,18 @@ public class MainViewModel : BaseViewModel
 
         Items.Clear();
 
+        var root = new FileSystemItem { Name = "Loading...", IsDirectory = true };
+        Items.Add(root);
+
         try
         {
             var result = await _scanner.ScanAsync(selectedPath, _cts.Token);
-            Items.Add(result);
+
+            Items[0] = result;
         }
         catch (OperationCanceledException)
         {
-            // отмена — это нормально
+            
         }
     }
 

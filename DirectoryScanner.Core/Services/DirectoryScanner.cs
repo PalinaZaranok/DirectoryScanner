@@ -5,9 +5,13 @@ namespace DirectoryScanner.Core.Services;
 
 public class DirectoryScanner
 {
-    private const int MaxConcurrency = 4;
-    private readonly SemaphoreSlim _semaphore = new(MaxConcurrency);
+    private readonly SemaphoreSlim _semaphore;
     private readonly ConcurrentBag<Task> _tasks = new();
+    
+    public DirectoryScanner(int maxConcurrency = 4)
+    {
+        _semaphore = new SemaphoreSlim(maxConcurrency);
+    }
 
     public async Task<FileSystemItem> ScanAsync(string path, CancellationToken token)
     {
