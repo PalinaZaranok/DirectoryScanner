@@ -52,4 +52,20 @@ public class DirectoryScannerTests
             );
         });
     }
+    
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(100)]
+    public async Task ScanAsync_ShouldWorkWithDifferentWorkerCounts(int workers)
+    {
+        var scanner = new DirectoryScanner(workers);
+
+        var result = await scanner.ScanAsync(
+            Directory.GetCurrentDirectory(),
+            CancellationToken.None
+        );
+
+        Assert.True(result.Size > 0);
+    }
 }
