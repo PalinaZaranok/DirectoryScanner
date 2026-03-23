@@ -27,10 +27,6 @@ public class DirectoryScanner
 
         CalculateDirectorySizes(root);
         CalculatePercentages(root);
-        
-        CalculateDirectorySizes(root);
-        
-        CalculatePercentages(root);
 
         return root;
     }
