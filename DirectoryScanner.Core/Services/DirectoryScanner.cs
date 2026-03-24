@@ -7,42 +7,64 @@ public class DirectoryScanner
 {
     private readonly SemaphoreSlim _semaphore;
     private readonly ConcurrentBag<Task> _tasks = new();
-    
+
     public DirectoryScanner(int maxConcurrency = 4)
     {
         _semaphore = new SemaphoreSlim(maxConcurrency);
     }
 
-    public async Task<FileSystemItem> ScanAsync(string path, CancellationToken token)
+    public async Task ScanAsync(
+        FileSystemItem root,
+        string path,
+        CancellationToken token,
+        Action<FileSystemItem, FileSystemItem>? onItemFound)
     {
-        var root = new FileSystemItem
+        
+        _tasks.Clear();
+        await ProcessDirectoryAsync(root, path, token, onItemFound);
+
+        try
         {
-            Name = Path.GetFileName(path),
-            IsDirectory = true
-        };
-
-        await ProcessDirectoryAsync(root, path, token);
-
-        await Task.WhenAll(_tasks); 
-
-        CalculateDirectorySizes(root);
-        CalculatePercentages(root);
-
-        return root;
+            await Task.WhenAll(_tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            
+        }
+        
+        //CalculateDirectorySizes(root);
+        //CalculatePercentages(root);
     }
-    
-    private async Task ProcessDirectoryAsync(FileSystemItem node, string path, CancellationToken token)
+
+    private async Task ProcessDirectoryAsync(FileSystemItem node, string path,
+        CancellationToken token, Action<FileSystemItem, FileSystemItem>? onItemFound)
     {
         await _semaphore.WaitAsync(token);
 
         try
         {
+            token.ThrowIfCancellationRequested();
+
             var dirInfo = new DirectoryInfo(path);
-            
-            foreach (var file in dirInfo.GetFiles())
+
+            FileInfo[] files;
+            try
+            {
+                files = dirInfo.GetFiles();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+
+            foreach (var file in files)
             {
                 token.ThrowIfCancellationRequested();
-                
+
                 if (file.LinkTarget != null)
                     continue;
 
@@ -55,12 +77,26 @@ public class DirectoryScanner
 
                 lock (node)
                 {
-                    node.Children.Add(fileItem);
-                    node.Size += file.Length;
+                    //node.Size += file.Length;
                 }
+                onItemFound?.Invoke(node, fileItem);
             }
-            
-            foreach (var dir in dirInfo.GetDirectories())
+
+            DirectoryInfo[] dirs;
+            try
+            {
+                dirs = dirInfo.GetDirectories();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+
+            foreach (var dir in dirs)
             {
                 token.ThrowIfCancellationRequested();
 
@@ -73,12 +109,14 @@ public class DirectoryScanner
                     IsDirectory = true
                 };
 
-                lock (node)
-                {
-                    node.Children.Add(dirItem);
-                }
                 
-                var task = Task.Run(() => ProcessDirectoryAsync(dirItem, dir.FullName, token), token);
+                
+                onItemFound?.Invoke(node, dirItem);
+
+
+                var task = Task.Run(() =>
+                    ProcessDirectoryAsync(dirItem, dir.FullName, token, onItemFound), token);
+
                 _tasks.Add(task);
             }
         }
@@ -87,7 +125,8 @@ public class DirectoryScanner
             _semaphore.Release();
         }
     }
-    
+
+    /*
     private long CalculateDirectorySizes(FileSystemItem node)
     {
         if (!node.IsDirectory)
@@ -103,7 +142,7 @@ public class DirectoryScanner
         node.Size = total;
         return total;
     }
-    
+
     private void CalculatePercentages(FileSystemItem node)
     {
         foreach (var child in node.Children)
@@ -115,6 +154,5 @@ public class DirectoryScanner
                 CalculatePercentages(child);
         }
     }
-    
-    
+    */
 }

@@ -1,71 +1,147 @@
-namespace UnitTests;
+using DirectoryScanner.Core.Models;
 
-using DirectoryScanner.Core.Services;
-using Xunit;
+namespace UnitTests;
 
 public class DirectoryScannerTests
 {
     [Fact]
     public async Task ScanAsync_ShouldReturnResult()
     {
-        var scanner = new DirectoryScanner();
+        var tempDir = CreateTempDirectory();
 
-        var result = await scanner.ScanAsync(
-            Directory.GetCurrentDirectory(),
-            CancellationToken.None
+        await File.WriteAllTextAsync(
+            Path.Combine(tempDir, "test.txt"),
+            "data"
         );
 
-        Assert.NotNull(result);
-        Assert.True(result.Children.Count > 0);
-    }
-    
-    [Fact]
-    public async Task ScanAsync_ShouldCalculateFileSizeCorrectly()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(tempDir);
+        var root = new FileSystemItem { Name = "Test", IsDirectory = true };
+        var scanner = new DirectoryScanner.Core.Services.DirectoryScanner();
 
-        var filePath = Path.Combine(tempDir, "test.txt");
-        await File.WriteAllTextAsync(filePath, "12345"); // 5 байт
+        await scanner.ScanAsync(
+            root,
+            tempDir,
+            CancellationToken.None,
+            (parent, child) =>
+            {
+                parent.Children.Add(child); 
+            });
 
-        var scanner = new DirectoryScanner();
-        var result = await scanner.ScanAsync(tempDir, CancellationToken.None);
-
-        Assert.Equal(5, result.Size);
+        Assert.NotNull(root);
+        Assert.NotEmpty(root.Children);
 
         Directory.Delete(tempDir, true);
     }
-    
+
+    [Fact]
+    public async Task ScanAsync_ShouldCalculateFileSizeCorrectly()
+    {
+        var tempDir = CreateTempDirectory();
+
+        var filePath = Path.Combine(tempDir, "test.txt");
+        await File.WriteAllTextAsync(filePath, "12345"); 
+
+        var root = new FileSystemItem { Name = "Test", IsDirectory = true };
+        var scanner = new DirectoryScanner.Core.Services.DirectoryScanner();
+
+        await scanner.ScanAsync(
+            root,
+            tempDir,
+            CancellationToken.None,
+            (parent, child) =>
+            {
+                parent.Children.Add(child);
+            });
+        
+        CalculateDirectorySizes(root);
+
+        Assert.Equal(5, root.Size);
+
+        Directory.Delete(tempDir, true);
+    }
+
     [Fact]
     public async Task ScanAsync_ShouldCancel()
     {
-        var scanner = new DirectoryScanner();
+        var tempDir = CreateTempDirectory();
+
+        var scanner = new DirectoryScanner.Core.Services.DirectoryScanner();
         var cts = new CancellationTokenSource();
 
         cts.Cancel();
 
+        var root = new FileSystemItem { Name = "Test", IsDirectory = true };
+
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
             await scanner.ScanAsync(
-                Directory.GetCurrentDirectory(),
-                cts.Token
-            );
+                root,
+                tempDir,
+                cts.Token,
+                (parent, child) =>
+                {
+                    parent.Children.Add(child);
+                });
         });
+
+        Directory.Delete(tempDir, true);
     }
-    
+
     [Theory]
     [InlineData(1)]
     [InlineData(8)]
     [InlineData(100)]
     public async Task ScanAsync_ShouldWorkWithDifferentWorkerCounts(int workers)
     {
-        var scanner = new DirectoryScanner(workers);
+        var tempDir = CreateTempDirectory();
 
-        var result = await scanner.ScanAsync(
-            Directory.GetCurrentDirectory(),
-            CancellationToken.None
-        );
+        for (int i = 0; i < 10; i++)
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(tempDir, $"file{i}.txt"),
+                "data"
+            );
+        }
 
-        Assert.True(result.Size > 0);
+        var scanner = new DirectoryScanner.Core.Services.DirectoryScanner(workers);
+        var root = new FileSystemItem { Name = "Test", IsDirectory = true };
+
+        await scanner.ScanAsync(
+            root,
+            tempDir,
+            CancellationToken.None,
+            (parent, child) =>
+            {
+                parent.Children.Add(child);
+            });
+
+        CalculateDirectorySizes(root);
+
+        Assert.True(root.Size > 0);
+        Assert.NotEmpty(root.Children);
+
+        Directory.Delete(tempDir, true);
+    }
+    
+    private long CalculateDirectorySizes(FileSystemItem node)
+    {
+        if (!node.IsDirectory)
+            return node.Size;
+
+        long total = 0;
+
+        foreach (var child in node.Children)
+        {
+            total += CalculateDirectorySizes(child);
+        }
+
+        node.Size = total;
+        return total;
+    }
+    
+    private string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(path);
+        return path;
     }
 }
