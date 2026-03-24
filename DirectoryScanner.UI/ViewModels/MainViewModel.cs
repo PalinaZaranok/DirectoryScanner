@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using DirectoryScanner.Core.Models;
 using DirectoryScanner.Core.Services;
@@ -45,23 +46,66 @@ public class MainViewModel : BaseViewModel
 
         Items.Clear();
 
-        var root = new FileSystemItem { Name = "Loading...", IsDirectory = true };
+        var root = new FileSystemItem
+        {
+            Name = Path.GetFileName(selectedPath),
+            IsDirectory = true
+        };
+
         Items.Add(root);
 
         try
         {
-            var result = await _scanner.ScanAsync(selectedPath, _cts.Token);
-
-            Items[0] = result;
+            await _scanner.ScanAsync(
+                root, selectedPath, _cts.Token,
+                (parent, child) =>
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        parent.Children.Add(child);
+                    });
+                });
         }
         catch (OperationCanceledException)
         {
-            
         }
+        
+        await Application.Current.Dispatcher.InvokeAsync(() => { });
+        
+        CalculateDirectorySizes(root);
+        CalculatePercentages(root);
     }
 
     private void CancelScan()
     {
         _cts?.Cancel();
+    }
+    
+    private long CalculateDirectorySizes(FileSystemItem node)
+    {
+        if (!node.IsDirectory)
+            return node.Size;
+
+        long total = 0;
+
+        foreach (var child in node.Children)
+        {
+            total += CalculateDirectorySizes(child);
+        }
+
+        node.Size = total;
+        return total;
+    }
+
+    private void CalculatePercentages(FileSystemItem node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (node.Size > 0)
+                child.Percentage = (double)child.Size / node.Size * 100;
+
+            if (child.IsDirectory)
+                CalculatePercentages(child);
+        }
     }
 }

@@ -4,5 +4,5 @@ namespace DirectoryScanner.Core.Services;
 
 public interface IDirectoryScanner
 {
-    Task<FileSystemItem> ScanAsync(string path, CancellationToken cancellationToken);
+    Task ScanAsync(FileSystemItem root, string path, CancellationToken token);
 }
