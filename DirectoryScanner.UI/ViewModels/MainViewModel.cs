@@ -25,6 +25,7 @@ public class MainViewModel : BaseViewModel
         CancelCommand = new RelayCommand(CancelScan);
     }
     
+    /*
     private async void StartScan()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
@@ -74,6 +75,75 @@ public class MainViewModel : BaseViewModel
         
         CalculateDirectorySizes(root);
         CalculatePercentages(root);
+    }
+    */
+    
+    private async void StartScan()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            CheckFileExists = false,
+            CheckPathExists = true,
+            FileName = "Выберите папку"
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        var selectedPath = Path.GetDirectoryName(dialog.FileName);
+
+        if (string.IsNullOrEmpty(selectedPath))
+            return;
+
+        _cts = new CancellationTokenSource();
+
+        Items.Clear();
+
+        var root = new FileSystemItem
+        {
+            Name = Path.GetFileName(selectedPath),
+            IsDirectory = true
+        };
+
+        Items.Add(root);
+
+        try
+        {
+            await _scanner.ScanAsync(
+                root,
+                selectedPath,
+                _cts.Token,
+                (parent, child) =>
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        parent.Children.Add(child);
+                    });
+                });
+            
+            await Application.Current.Dispatcher.InvokeAsync(() => { });
+
+            CalculateDirectorySizes(root);
+            CalculatePercentages(root);
+            
+            MessageBox.Show(
+                "Сканирование завершено",
+                "Готово",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            await Application.Current.Dispatcher.InvokeAsync(() => { });
+
+            CalculateDirectorySizes(root);
+            CalculatePercentages(root);
+            MessageBox.Show(
+                "Сканирование отменено",
+                "Отмена",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     private void CancelScan()
